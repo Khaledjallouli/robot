@@ -1,0 +1,520 @@
+#include "main.h"
+
+// Déclaration des objets synchronisants !! Ne pas oublier de les créer
+xSemaphoreHandle xSemaphore_superviseur = NULL;
+xSemaphoreHandle xSemaphore_motor = NULL;
+
+xQueueHandle qSuperviseur = NULL;
+xQueueHandle qMotor = NULL;
+xQueueHandle qCapteur = NULL;
+xQueueHandle qEcran = NULL;
+xQueueHandle qZegbee = NULL;
+xQueueHandle qCam = NULL;
+xQueueHandle qAsserv = NULL;
+
+#define to 310.0e-3
+#define ti (0.1*to)
+#define ki (5.0e-3)/ti
+#define kp 0.01
+
+//asserv
+float ui_left=0;//hors boucle
+int cde_left=100;
+float ui_right=0;//hors boucle
+int cde_right=100;
+float cons_right=-300.0;
+float cons_left=-300.0;
+
+int varDefautDroite = 1000;
+int varDefautGauche=1000;
+
+int currentLeft = 100, currentRight = 100;
+struct AMessage
+{
+	char command;
+	int data;
+};
+
+extern uint8_t rec_buf[NB_CAR_TO_RECEIVE+1]; // caractere recu
+
+
+//========================================================
+
+static void task_superviseur( void *pvParameters )
+{
+	struct AMessage pxMessage;
+	//pxMessage.command='a';
+	pxMessage.data=10;
+	vTaskDelay(1000);
+
+	for (;;)
+	{
+
+		/*xQueueSend( qCam, ( void * ) &pxMessage,  portMAX_DELAY );
+		xSemaphoreTake( xSemaphore_superviseur, portMAX_DELAY );
+		*/
+	
+		//term_printf("TASK SUPERVISEUR \n\r");
+
+		switch(rec_buf[0]){ // avec la liaison  serie on recupere cette valeur dans drv/drv_uart L 97
+					case '1': // avancer, c'est nous qui ont choisi les valeurs
+						cons_left= 1000;
+						cons_right = 1000;
+						//currentLeft= 150;
+						//currentRight = 150;
+						break;
+					case '2': // reculer
+						//currentLeft= 50;
+						//currentRight = 50;
+						cons_left= -1000;
+						cons_right = -1000;
+						break;
+					case '3': //gauche
+						//currentLeft= 70;
+						//currentRight = 130;
+						cons_left= -500;
+						cons_right = 500;
+
+						break;
+					case '4': // droite
+						//currentLeft= 130;
+						//currentRight = 70;
+						cons_left= 500;
+						cons_right = -500;
+
+						break;
+					case '5': // stop
+						//currentLeft= 100;
+						//currentRight = 100;
+						cons_left= 0;
+						cons_right = 0;
+					case '6': // accelerate
+						varDefautDroite += 500;
+						varDefautGauche+=500;
+						//cons_left = cons_left + (cons_left* 0.1);
+						//cons_right = cons_right +(cons_right * 0.1) ;
+						break;
+					case '7': // decelerate
+						varDefautDroite -= 500;
+						varDefautGauche-=500;
+
+				}
+
+		xQueueSend( qCapteur, ( void * ) &pxMessage,  portMAX_DELAY );
+		xSemaphoreTake( xSemaphore_superviseur, portMAX_DELAY );
+
+		xQueueSend( qAsserv, ( void * ) &pxMessage,  portMAX_DELAY );
+		xSemaphoreTake( xSemaphore_superviseur, portMAX_DELAY );
+		
+
+
+		xQueueSend( qMotor, ( void * ) &pxMessage,  portMAX_DELAY );
+		xSemaphoreTake( xSemaphore_superviseur, portMAX_DELAY );
+
+
+
+		// pour le moteur on peut l'executer avec IHM et envoyer une valeur 
+		// pour faire son case 6: dans rec_buf[0] mais comment ça va etre pour ecran
+		// ce que j'ai pas compris qu'est ce qu'on va mettre comme switch pour les cas ici 
+
+		//deb partie motor
+
+		//fin partie motor
+
+		//deb partie ecran
+	//	xQueueSend( qCam, ( void * ) &pxMessage,  portMAX_DELAY );
+	//	xSemaphoreTake( xSemaphore_superviseur, portMAX_DELAY );
+		//fin partie ecran
+
+	
+
+
+		vTaskDelay(5);
+	}
+}
+
+static void task_motor(void *pvParameters){
+
+struct AMessage pxRxedMessage;
+
+	for (;;)
+	{
+		xQueueReceive( qMotor,  &( pxRxedMessage ) , portMAX_DELAY );
+		cde_left+=1000;
+		cde_right+=1000;
+	motorLeft_SetDuty(cde_left);
+	motorRight_SetDuty(cde_right);
+
+
+	//motorLeft_SetDuty(currentLeft);
+		//motorRight_SetDuty(currentRight);
+		xSemaphoreGive( xSemaphore_superviseur );
+	}
+}
+
+static void task_capteur(void *pvParameters){
+
+struct AMessage pxRxedMessage;
+int table[2];
+// prob que ça marche pas
+	for (;;)
+	{
+		xQueueReceive( qCapteur,  &( pxRxedMessage ) , portMAX_DELAY );
+		captDistIR_Get(table);
+		int valBackLeft = captDistUS_Get(0xE0);
+		int valBackRight = captDistUS_Get(0xE2);
+		/*if(table[0]>= 2000 ){ // des interruptions : on les mis ici ou
+				//0 : gauche										//dans un task_capteur () si dans un task
+														// comment on va le considerer comme interruption
+			//currentLeft= 0;
+			//currentRight = 0;
+			cons_left=500;
+			cons_right=-500;
+
+		}*/
+		if (table[1]>=2000){
+			int varLeft = cons_left;
+			int varRight = cons_right;
+			int i = 0 ;
+			while (i<200){
+			cons_left=-500;
+			cons_right=500;
+			i++;
+			vTaskDelay(5);
+			}
+			cons_left=varLeft;
+			cons_right=varRight;
+
+		}
+/*
+		if(((valBackLeft<=20) || (valBackRight<=20))){
+			//currentLeft= 0;
+			//currentRight = 0;
+			cons_left=1000;
+			cons_right=1000;
+
+		}*/
+
+		xSemaphoreGive( xSemaphore_superviseur );
+	}
+}
+
+
+/*static void task_ecran(void *pvParameters){
+	struct AMessage pxRxedMessage;
+
+		for (;;)
+		{
+			xQueueReceive( qEcran,  &( pxRxedMessage ) , portMAX_DELAY );
+			switch(rec_buf[0]){ // avec la liaison  serie on recupere cette valeur dans drv/drv_uart L 97
+				case '1': // avancer, c'est nous qui ont choisi les valeurs
+					screenLCD_Write("Avance",6 ,0,0);
+					break;
+				case '2': // reculer
+					screenLCD_Write("Recule",6 ,0,0);
+					break;
+				case '3': //gauche
+					screenLCD_Write("Gauche",6 ,0,0);
+					break;
+				case '4': // droite
+					screenLCD_Write("Droite",6 ,0,0);
+					break;
+				case '5': // stop
+					screenLCD_Write("Arret",5 ,0,0);
+					break;
+				default :
+					break;
+			}
+			xSemaphoreGive( xSemaphore_superviseur );
+		}
+
+}
+*/
+/*
+static void task_ZigBee(void *pvParameters )
+{
+	for (;;)
+	{// pour avoir une vitesse variable et il fut l'afficher
+		xQueueReceive(qZegbee, (void*)&pxMessage, portMAX_DELAY);
+		//term_printf("TASK ZB \n\r");
+
+		speedL = rec_buf6[0];
+		speedR = rec_buf6[1];
+
+		int enc_L = quadEncoder_GetSpeedL();
+		int enc_R = quadEncoder_GetSpeedR();
+		term_printf_zigbee("%d %d",enc_R,enc_L);
+
+
+		xSemaphoreGive(xSemaphore_superviseur);
+
+	}
+}*/
+
+/*
+static void task_cam(void *pvParameters )
+{
+
+	for (;;)
+	{
+		xQueueReceive(qCAM, (void*)&pxMessage, portMAX_DELAY);
+		term_printf("TASK CAM \n\r");		
+		pixyCam_Test();
+
+		xSemaphoreGive(xSemaphore_superviseur);
+
+	}
+}
+
+*/
+/*
+static void task_cam( void *pvParameters )//camera
+{
+	uint16_t tabWH[2]={0,0};
+	uint16_t tabXY[2]={0,0};
+	int N=10;
+	uint16_t valmoy_X=0;
+	uint16_t valmoy_Y=0;
+	struct AMessage pxRxedMessage;
+
+	for (;;)
+	{
+		//term_printf("TASK D \n\r");
+		//xSemaphoreGive( xSemaphore );
+		xQueueReceive(qCam, (void*)&pxRxedMessage, portMAX_DELAY);
+
+		for (int i=0; i<N ; i++)
+		{
+			pixyCam_Get( tabXY, tabWH);
+			valmoy_X+=tabXY[0];
+			valmoy_Y+=tabXY[1];
+
+		}
+		valmoy_X=valmoy_X/N;
+		valmoy_Y=valmoy_Y/N;
+
+if(tabWH[0]>10 )
+{
+	if(tabWH[1]>5 )
+	{
+				if(valmoy_X<160)
+					{
+						servoLow_Set(servoLow_Get()+1);
+					}
+				if(valmoy_X>160)
+					{
+						servoLow_Set(servoLow_Get()-1);
+					}
+				if(valmoy_Y>100)
+					{
+						servoHigh_Set(servoHigh_Get()+1);
+					}
+				if(valmoy_Y<100)
+					{
+						servoHigh_Set(servoHigh_Get()-1);
+					}
+	}
+}
+
+				vTaskDelay(100);//fixer la cadence à 5ms
+				xSemaphoreGive(xSemaphore_superviseur);
+
+	}
+}
+
+*/
+
+static void task_asserv(void *pvParameters)
+{
+	struct AMessage pxRxedMessage;
+
+	for (;;)
+		{
+		
+		xQueueReceive(qAsserv, (void*)&pxRxedMessage, portMAX_DELAY);
+
+int speed_L = quadEncoder_GetSpeedL();
+
+	//left
+	float err_left=(cons_left-(float)speed_L);
+	float up_left=kp*err_left;
+	ui_left=ui_left+kp*ki*err_left;
+	cde_left=up_left+ui_left+100;
+	//right
+
+	int speed_R = quadEncoder_GetSpeedR();
+
+	float err_right=cons_right-(float)speed_R;
+	float up_right=kp*err_right;
+	ui_right=ui_right+kp*ki*err_right;
+	cde_right=up_right+ui_right+100;
+
+
+	//motorLeft_SetDuty(cde_left);
+	//motorRight_SetDuty(cde_right);
+
+
+	//vTaskDelay(5);
+	xSemaphoreGive(xSemaphore_superviseur);
+
+		}
+}
+
+//=========================================================
+//	>>>>>>>>>>>>	MAIN	<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+//=========================================================
+
+int main(void)
+{
+	HAL_Init();
+	SystemClock_Config();
+
+
+	uart2_Init();			// CABLE
+	uart6_Init();			// ZIGBEE
+	i2c1_Init();
+	spi1Init();
+	pixyCam_Init();			// Caméra Pixy
+	captDistIR_Init();		// Capteurs Infrarouge
+	quadEncoder_Init();		// Encodeurs Incrémentaux
+	motorCommand_Init();	// Commande des Hacheurs
+	servoCommand_Init();	// Commande des Servomoteurs
+
+	HAL_Delay(1000);
+
+
+
+	//motorLeft_SetDuty(150);
+	//motorRight_SetDuty(150);
+
+// A tester avec A et B OU C et D OU E et F
+	//xTaskCreate( task_A, ( const portCHAR * ) "task A", 512 /* stack size */, NULL, tskIDLE_PRIORITY+2, NULL );
+	//xTaskCreate( task_B, ( const portCHAR * ) "task B", 512 /* stack size */, NULL, tskIDLE_PRIORITY+1, NULL );
+//	xTaskCreate( task_C, ( signed portCHAR * ) "task C", 512 /* stack size */, NULL, tskIDLE_PRIORITY+2, NULL );
+//	xTaskCreate( task_D, ( signed portCHAR * ) "task D", 512 /* stack size */, NULL, tskIDLE_PRIORITY+1, NULL );
+ 	xTaskCreate( task_superviseur, ( signed portCHAR * ) "task superviseur", 512 /* stack size */, NULL, tskIDLE_PRIORITY+6, NULL );
+ 	xTaskCreate( task_motor, ( signed portCHAR * ) "task motor", 512 /* stack size */, NULL, tskIDLE_PRIORITY+4, NULL );
+ 	xTaskCreate( task_capteur, ( signed portCHAR * ) "task capteur", 512 /* stack size */, NULL, tskIDLE_PRIORITY+5, NULL );
+//xTaskCreate( task_ecran, ( signed portCHAR * ) "task ecran", 512 /* stack size */, NULL, tskIDLE_PRIORITY+3, NULL );
+ 	//xTaskCreate( task_ZigBee, ( signed portCHAR * ) "task zigbee", 512 /* stack size */, NULL, tskIDLE_PRIORITY+2, NULL );
+ 	//xTaskCreate( task_cam, ( signed portCHAR * ) "task cam", 512 /* stack size */, NULL, tskIDLE_PRIORITY+1, NULL );
+ 	xTaskCreate( task_asserv, ( signed portCHAR * ) "task cam", 512 /* stack size */, NULL, tskIDLE_PRIORITY+2, NULL );
+
+	//vSemaphoreCreateBinary(xSemaphore_superviseur);
+	//xSemaphoreTake( xSemaphore_superviseur, portMAX_DELAY );
+
+	vSemaphoreCreateBinary(xSemaphore_superviseur);
+	xSemaphoreTake( xSemaphore_superviseur, portMAX_DELAY );
+
+
+	//qSuperviseur = xQueueCreate( 1, sizeof(struct AMessage ) );
+		qMotor = xQueueCreate( 1, sizeof(struct AMessage ) );
+		qEcran = xQueueCreate( 1, sizeof(struct AMessage ) );
+		qCapteur = xQueueCreate( 1, sizeof(struct AMessage ) );
+
+		//qZigbee = xQueueCreate( 1, sizeof(struct AMessage ) );
+		//qCam = xQueueCreate( 1, sizeof(struct AMessage ) );
+		qAsserv= xQueueCreate( 1, sizeof(struct AMessage ) );
+	vTaskStartScheduler();
+
+	return 0;
+
+}
+
+//=================================================================
+// Called if stack overflow during execution
+extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,
+		signed char *pcTaskName)
+{
+	//term_printf("stack overflow %x %s\r\n", pxTask, (portCHAR *)pcTaskName);
+	/* If the parameters have been corrupted then inspect pxCurrentTCB to
+	 * identify which task has overflowed its stack.
+	 */
+	for (;;) {
+	}
+}
+//=================================================================
+//This function is called by FreeRTOS idle task
+extern void vApplicationIdleHook(void)
+{
+}
+//=================================================================
+// brief This function is called by FreeRTOS each tick
+extern void vApplicationTickHook(void)
+{
+//	HAL_IncTick();
+}
+
+
+
+
+/*	
+
+void asserLeft(int consigne){
+	int tick = quadEncoder_GetSpeedL();
+
+   	float erreur_Left = (consigne-100) * 130 - tick;
+	float up = Kp * erreur_Left;
+	float ui = uiPrecLeft + Kp * Ki * erreur_Left;
+	uiPrecLeft = ui;
+	float cmdAppliquee = up + ui ;
+
+	cmdAppliquee= cmdAppliquee + 100;
+
+	if(cmdAppliquee > 200) { cmdAppliquee = 200 ;}
+	else if(cmdAppliquee < 0) { cmdAppliquee = 0 ;}
+
+	motorLeft_SetDuty((int)cmdAppliquee);
+}
+
+void asserRight(int consigne){
+	int tick = quadEncoder_GetSpeedR();
+
+   	float erreur_Right = (consigne-100) * 130 - tick;
+	float up = Kp * erreur_Right;
+	float ui = uiPrecRight+ Kp * Ki * erreur_Right;
+	uiPrecRight = ui;
+	float cmdAppliquee = up + ui;
+
+	cmdAppliquee= cmdAppliquee + 100;
+
+	if(cmdAppliquee > 200) { cmdAppliquee = 200 ;}
+	else if(cmdAppliquee < 0) { cmdAppliquee = 0 ;}
+
+	motorRight_SetDuty((int)cmdAppliquee);
+}
+
+
+
+
+
+
+
+
+
+switch(){ // avec la liaison  serie on recupere cette valeur dans drv/drv_uart L 97
+			case 10: //bouton 1:  motor : il faut trouver les valeurs des boutons de screen LCD
+				term_printf("TASK MOTOR \n\r");
+				xQueueSend( qSuperviseur, ( void * ) &pxMessage,  portMAX_DELAY );
+				xSemaphoreTake( xSemaphore_superviseur, portMAX_DELAY );
+				break;
+			case 11: //bouton 2 : capteur
+				term_printf("TASK CAPTEUR \n\r");
+				xQueueSend( qSuperviseur, ( void * ) &pxMessage,  portMAX_DELAY );
+				xSemaphoreTake( xSemaphore_superviseur, portMAX_DELAY );
+				break;
+			case 12: //bouton 3 : camera
+				term_printf("TASK CAMERA \n\r");
+				xQueueSend( qSuperviseur, ( void * ) &pxMessage,  portMAX_DELAY );
+				xSemaphoreTake( xSemaphore_superviseur, portMAX_DELAY );
+				break;
+			case 13: //bouton 4 : zigbee
+				term_printf("TASK ZIGBEE \n\r");
+				xQueueSend( qSuperviseur, ( void * ) &pxMessage,  portMAX_DELAY );
+				xSemaphoreTake( xSemaphore_superviseur, portMAX_DELAY );
+				break;
+			default :
+				break;
+		}*/
+
+

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cdtprojectproperties>
+<section name="org.eclipse.cdt.internal.ui.wizards.settingswizards.IncludePaths">
+<language name="holder for library settings">
+
+</language>
+<language name="Assembly">
+
+</language>
+<language name="GNU C++">
+
+</language>
+<language name="GNU C">
+<includepath>${SDK_ELEC}/arm-none-eabi/lib/gcc/arm-none-eabi/4.8.4/include</includepath>
+<includepath>${SDK_ELEC}/arm-none-eabi/arm-none-eabi/include</includepath>
+<includepath workspace_path="true">/${ProjName}/include</includepath>
+
+</language>
+</section>
+</cdtprojectproperties>

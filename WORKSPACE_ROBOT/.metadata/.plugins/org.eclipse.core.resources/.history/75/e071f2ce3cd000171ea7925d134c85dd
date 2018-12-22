@@ -1,0 +1,146 @@
+#include "main.h"
+
+// Déclaration des objets synchronisants !! Ne pas oublier de les créer
+xSemaphoreHandle xSemaphore = NULL;
+xQueueHandle qh = NULL;
+
+struct AMessage
+{
+	char command;
+	int data;
+};
+
+//========================================================
+static void task_A(void *pvParameters)
+{
+
+	for (;;)
+	{
+		term_printf("TASK A \n\r");
+		vTaskDelay(1); // 1000 ms
+	}
+}
+
+static void task_B(void *pvParameters)
+{
+	for (;;)
+	{
+		term_printf("TASK B \n\r");
+	}
+}
+//========================================================
+
+static void task_C( void *pvParameters )
+{
+	for (;;)
+	{
+		term_printf("TASK C \n\r");
+		xSemaphoreTake( xSemaphore, portMAX_DELAY );
+	}
+}
+
+static void task_D( void *pvParameters )
+{
+	for (;;)
+	{
+		term_printf("TASK D \n\r");
+		xSemaphoreGive( xSemaphore );
+	}
+}
+
+//========================================================
+
+static void task_E( void *pvParameters )
+{
+	struct AMessage pxMessage;
+	pxMessage.command='a';
+	pxMessage.data=10;
+	vTaskDelay(1000);
+	for (;;)
+	{
+		term_printf("TASK E \n\r");
+		xQueueSend( qh, ( void * ) &pxMessage,  portMAX_DELAY );
+		xSemaphoreTake( xSemaphore, portMAX_DELAY );
+		vTaskDelay(1000);
+	}
+}
+
+static void task_F(void *pvParameters)
+{
+	struct AMessage pxRxedMessage;
+
+	for (;;)
+	{
+		xQueueReceive( qh,  &( pxRxedMessage ) , portMAX_DELAY );
+		term_printf("TASK F \n\r");
+		xSemaphoreGive( xSemaphore );
+	}
+}
+//=========================================================
+//	>>>>>>>>>>>>	MAIN	<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+//=========================================================
+
+int main(void)
+{
+	HAL_Init();
+	SystemClock_Config();
+
+	uart2_Init();			// CABLE
+	uart6_Init();			// ZIGBEE
+	i2c1_Init();
+	spi1Init();
+	pixyCam_Init();			// Caméra Pixy
+	captDistIR_Init();		// Capteurs Infrarouge
+	quadEncoder_Init();		// Encodeurs Incrémentaux
+	motorCommand_Init();	// Commande des Hacheurs
+	servoCommand_Init();	// Commande des Servomoteurs
+
+	HAL_Delay(1000);
+
+	motorLeft_SetDuty(50);
+	motorRight_SetDuty(50);
+
+
+	xTaskCreate( task_A, ( const portCHAR * ) "task A", 512 /* stack size */, NULL, tskIDLE_PRIORITY+2, NULL );
+	xTaskCreate( task_B, ( const portCHAR * ) "task B", 512 /* stack size */, NULL, tskIDLE_PRIORITY+1, NULL );
+//	xTaskCreate( task_C, ( signed portCHAR * ) "task C", 512 /* stack size */, NULL, tskIDLE_PRIORITY+2, NULL );
+//	xTaskCreate( task_D, ( signed portCHAR * ) "task D", 512 /* stack size */, NULL, tskIDLE_PRIORITY+1, NULL );
+// 	xTaskCreate( task_E, ( signed portCHAR * ) "task E", 512 /* stack size */, NULL, tskIDLE_PRIORITY+2, NULL );
+// 	xTaskCreate( task_F, ( signed portCHAR * ) "task F", 512 /* stack size */, NULL, tskIDLE_PRIORITY+1, NULL );
+
+	vSemaphoreCreateBinary(xSemaphore);
+	xSemaphoreTake( xSemaphore, portMAX_DELAY );
+
+	qh = xQueueCreate( 1, sizeof(struct AMessage ) );
+
+	vTaskStartScheduler();
+
+	return 0;
+
+}
+
+//=================================================================
+// Called if stack overflow during execution
+extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,
+		signed char *pcTaskName)
+{
+	//term_printf("stack overflow %x %s\r\n", pxTask, (portCHAR *)pcTaskName);
+	/* If the parameters have been corrupted then inspect pxCurrentTCB to
+	 * identify which task has overflowed its stack.
+	 */
+	for (;;) {
+	}
+}
+//=================================================================
+//This function is called by FreeRTOS idle task
+extern void vApplicationIdleHook(void)
+{
+}
+//=================================================================
+// brief This function is called by FreeRTOS each tick
+extern void vApplicationTickHook(void)
+{
+//	HAL_IncTick();
+}
+
+

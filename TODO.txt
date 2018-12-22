@@ -1,0 +1,22 @@
+
+-Detection obstacle 
+- Vitesse variable 
+
+MULTITACHE	4 Tâches Minimum (fournir diagramme flot de données)	2
+	Mode Démonstration (Machine d’état)	1
+	Détection d'obstacle (avant et arrière) et réaction	2
+	Contrôle du robot en boucle ouverte	1
+	Diagramme Temporel Fonctionnement global	1
+		
+INTERFACE DE COMMANDE	Interface de commande minimale	2
+	vitesse de consigne variable	1
+	affichage de la vitesse du robot	1
+		
+ECRAN LCD	Affichage Direction du robot	1
+		
+AUTOMATIQUE	Synthèse d'un correcteur de vitesse avec intégrateur	2.5
+	Synthèse d'un correcteur de position	1.5
+	Gestion du glissement	1.5
+		
+TRACKING	La tourelle seule (servomoteurs) suit une couleur	2
+	Le robot suit une couleur	1.5
